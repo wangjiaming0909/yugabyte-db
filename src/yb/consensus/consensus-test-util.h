@@ -139,7 +139,7 @@ OpIdPB MakeOpIdPbForIndex(int index) {
   return MakeOpId(index / kTermDivisor, index);
 }
 
-OpId MakeOpIdForIndex(int index) {
+inline OpId MakeOpIdForIndex(int index) {
   return OpId(index / kTermDivisor, index);
 }
 

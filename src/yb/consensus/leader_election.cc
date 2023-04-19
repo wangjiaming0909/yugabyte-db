@@ -264,6 +264,8 @@ void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid,
   {
     std::lock_guard<Lock> guard(lock_);
 
+    // its possible that after the decision has been made, we receive a granted or denied response
+    // here if we had made the decision, the callback is ignored
     if (has_responded_) {
       return;
     }

@@ -67,7 +67,7 @@ PeerManager::PeerManager(
 PeerManager::~PeerManager() {
   Close();
 }
-
+// update raft config remote, create peers added
 void PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
   VLOG_WITH_PREFIX(1) << "Updating peers from new config: " << config.ShortDebugString();
 
@@ -88,7 +88,7 @@ void PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
     }
     auto remote_peer = Peer::NewRemotePeer(
         peer_pb, tablet_id_, local_uuid_, peer_proxy_factory_->NewProxy(peer_pb), queue_,
-        multi_raft_batcher, raft_pool_token_, consensus_, peer_proxy_factory_->messenger());
+        multi_raft_batcher, raft_pool_token_, consensus_, peer_proxy_factory_->messenger()); // all peers use the same queue
     if (!remote_peer.ok()) {
       LOG_WITH_PREFIX(WARNING)
           << "Failed to create remote peer for " << peer_pb.ShortDebugString() << ": "

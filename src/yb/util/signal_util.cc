@@ -45,7 +45,7 @@ Status ThreadSignalMaskRestore(sigset_t old_mask) {
 
 const std::vector<int> kYsqlHandledSignals{
     // Following handlers are installed in StartBackgroundWorker:
-    SIGINT, // StatementCancelHandler
+    //SIGINT, // StatementCancelHandler
     SIGUSR1, // procsignal_sigusr1_handler
     SIGFPE, // FloatExceptionHandler
     SIGTERM, // bgworker_die

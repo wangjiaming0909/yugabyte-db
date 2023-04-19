@@ -1,0 +1,2 @@
+#!/bin/bash
+./yb_build.sh --gcc11 --sj --sp --make -j14 --ccmds

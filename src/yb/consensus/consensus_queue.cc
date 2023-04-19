@@ -446,7 +446,7 @@ Status PeerMessageQueue::AppendOperations(const ReplicateMsgs& msgs,
     if (last_id.term > queue_state_.current_term) {
       queue_state_.current_term = last_id.term;
     }
-  } else {
+  } else { //msg is empty, heartbeat?
     LockGuard lock(queue_lock_);
     last_id = queue_state_.last_appended;
   }

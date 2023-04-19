@@ -41,13 +41,22 @@
 #include "yb/consensus/log.h"
 #include "yb/consensus/peer_manager.h"
 
+#include "yb/consensus/state_change_context.h"
+#include "yb/consensus/consensus.service.h"
+
 #include "yb/fs/fs_manager.h"
 
 #include "yb/gutil/bind.h"
 #include "yb/gutil/stl_util.h"
 
+#include "yb/rpc/connection_context.h"
+#include "yb/rpc/proxy.h"
+#include "yb/rpc/rpc_context.h"
+#include "yb/rpc/yb_rpc.h"
 #include "yb/server/logical_clock.h"
 
+#include "yb/server/rpc_server.h"
+#include "yb/tserver/service_util.h"
 #include "yb/util/async_util.h"
 #include "yb/util/mem_tracker.h"
 #include "yb/util/metrics.h"
@@ -842,6 +851,271 @@ TEST_F(RaftConsensusTest, TestResetRcvdFromCurrentLeaderOnNewTerm) {
   ASSERT_EQ(caller_term, response.responder_term());
   ASSERT_EQ(OpId::FromPB(response.status().last_received()), noop_opid);
   ASSERT_EQ(OpId::FromPB(response.status().last_received_current_leader()), noop_opid);
+}
+
+class MyConsensusServiceImpl : public  ::yb::consensus::ConsensusServiceIf {
+  Consensus* consensus_;
+
+ public:
+  MyConsensusServiceImpl(Consensus* consensus, const scoped_refptr<MetricEntity>& metric_entity)
+      : ConsensusServiceIf(metric_entity), consensus_(consensus) {}
+  void UpdateConsensus(const consensus::LWConsensusRequestPB *req,
+                       consensus::LWConsensusResponsePB *resp,
+                       rpc::RpcContext context) override {
+    auto s = consensus_->Update(
+        rpc::SharedField(
+            context.shared_params(), const_cast<consensus::LWConsensusRequestPB*>(req)),
+        resp, context.GetClientDeadline());
+    RETURN_UNKNOWN_ERROR_IF_NOT_OK(s, resp, &context);
+    context.RespondSuccess();
+  }
+
+  void MultiRaftUpdateConsensus(const consensus::MultiRaftConsensusRequestPB *req,
+                                consensus::MultiRaftConsensusResponsePB *resp,
+                                rpc::RpcContext context) override {
+  }
+
+  void RequestConsensusVote(const consensus::VoteRequestPB* req,
+                            consensus::VoteResponsePB* resp,
+                            rpc::RpcContext context) override {
+    auto s = consensus_->RequestVote(req, resp);
+    RETURN_UNKNOWN_ERROR_IF_NOT_OK(s, resp, &context);
+    context.RespondSuccess();
+  }
+
+  void ChangeConfig(const consensus::ChangeConfigRequestPB* req,
+                    consensus::ChangeConfigResponsePB* resp,
+                    rpc::RpcContext context) override {}
+
+  void UnsafeChangeConfig(const consensus::UnsafeChangeConfigRequestPB* req,
+                          consensus::UnsafeChangeConfigResponsePB* resp,
+                          rpc::RpcContext context) override {}
+
+  void GetNodeInstance(const consensus::GetNodeInstanceRequestPB* req,
+                       consensus::GetNodeInstanceResponsePB* resp,
+                       rpc::RpcContext context) override {}
+
+  void RunLeaderElection(const consensus::RunLeaderElectionRequestPB* req,
+                         consensus::RunLeaderElectionResponsePB* resp,
+                         rpc::RpcContext context) override {}
+
+  void LeaderElectionLost(const consensus::LeaderElectionLostRequestPB *req,
+                          consensus::LeaderElectionLostResponsePB *resp,
+                          rpc::RpcContext context) override {}
+
+  void LeaderStepDown(const consensus::LeaderStepDownRequestPB* req,
+                      consensus::LeaderStepDownResponsePB* resp,
+                      rpc::RpcContext context) override {}
+
+  void GetLastOpId(const consensus::GetLastOpIdRequestPB *req,
+                   consensus::GetLastOpIdResponsePB *resp,
+                   rpc::RpcContext context) override {}
+
+  void GetConsensusState(const consensus::GetConsensusStateRequestPB *req,
+                         consensus::GetConsensusStateResponsePB *resp,
+                         rpc::RpcContext context) override {}
+
+  void StartRemoteBootstrap(const consensus::StartRemoteBootstrapRequestPB* req,
+                            consensus::StartRemoteBootstrapResponsePB* resp,
+                            rpc::RpcContext context) override {}
+};
+
+class RaftTest;
+struct RaftInstance {
+  std::string tablet_uuid_;
+  std::string peer_uuid_;
+  std::string path_;
+  std::string server_type_;
+  ConsensusOptions options_;
+  RaftConfigPB config_;
+  RaftPeerPB local_peer_pb_;
+  std::shared_ptr<RaftConsensus> consensus_;
+  std::unique_ptr<FsManager> fs_manager_;
+  std::unique_ptr<ConsensusMetadata> meta;
+  RaftTest* test_;
+  scoped_refptr<server::Clock> clock_;
+  std::unique_ptr<rpc::Messenger> messenger_;
+  std::unique_ptr<rpc::ProxyCache> proxy_cache_;
+  std::string tablet_wal_path_;
+  std::unique_ptr<Schema> schema_;
+  scoped_refptr<Log> log_;
+
+  std::unique_ptr<ThreadPool> thread_pool_;
+
+  std::unique_ptr<MetricRegistry> metric_registry_;
+  scoped_refptr<MetricEntity> table_metric_entity_;
+  scoped_refptr<MetricEntity> tablet_metric_entity_;
+  std::unique_ptr<MockOperationFactory> operation_factory_;
+
+  scoped_refptr<MetricEntity> server_metric_entity_;
+  std::unique_ptr<server::RpcServer> rpc_server_;
+  std::unique_ptr<rpc::Messenger> server_messenger_;
+  std::unique_ptr<rpc::ServiceIf> service_impl_;
+
+  RaftInstance(
+      const std::string& tablet_uuid, const std::string& uuid, RaftTest* test,
+      const ::google::protobuf::RepeatedPtrField<RaftPeerPB>& peers);
+  void init();
+  void init_log();
+  void init_schema();
+
+  void TabletPeerStateChangedCallback(
+      const string& tablet_id,
+      std::shared_ptr<consensus::StateChangeContext> context) {
+    LOG(INFO) << "Tablet peer state changed for tablet " << tablet_id
+              << ". Reason: " << context->ToString();
+  }
+  void start(const ConsensusBootstrapInfo& info) {
+    ASSERT_TRUE(consensus_->Start(info).ok());
+  }
+
+  void start_rpc_server(const server::RpcServerOptions& opts);
+};
+
+class RaftTest : public YBTest {
+  std::vector<std::unique_ptr<RaftInstance>> instances_;
+  std::unique_ptr<RaftConfigPB> config_;
+ public:
+  friend struct RaftInstance;
+  RaftTest() : instances_(), config_() {
+  }
+  void set_config(std::unique_ptr<RaftConfigPB> config) {
+    config_ = std::move(config);
+  }
+
+  void create_instances() {
+    auto& peers = config_->peers();
+    for (auto it = peers.begin(); it != peers.end(); ++it) {
+      std::string tablet_uuid = "tablet-";
+      tablet_uuid += it->permanent_uuid();
+      instances_.push_back(
+          make_unique<RaftInstance>(tablet_uuid, it->permanent_uuid(), this, peers));
+    }
+  }
+
+  void start_instances() {
+    server::RpcServerOptions opt;
+    for (auto& instance : instances_) {
+      ConsensusBootstrapInfo info;
+      instance->start(info);
+      opt.default_port = instance->local_peer_pb_.last_known_private_addr(0).port();
+      opt.rpc_bind_addresses = instance->local_peer_pb_.last_known_private_addr(0).host();
+      instance->start_rpc_server(opt);
+    }
+  }
+};
+
+RaftInstance::RaftInstance(
+    const std::string& tablet_uuid, const std::string& uuid, RaftTest* test,
+    const ::google::protobuf::RepeatedPtrField<RaftPeerPB>& peers)
+    : tablet_uuid_(tablet_uuid), peer_uuid_(uuid), path_("/tmp/"), test_(test) {
+  clock_ = server::LogicalClock::CreateStartingAt(HybridTime::kInitial);
+  path_ += uuid;
+  tablet_wal_path_ = path_ + "/wal";
+  options_.tablet_id = tablet_uuid;
+  server_type_ = "test-type";
+  *config_.mutable_peers() = peers;
+  auto self = std::find_if(
+      config_.mutable_peers()->begin(), config_.mutable_peers()->end(),
+      [&](const RaftPeerPB& peer) { return peer.permanent_uuid() == peer_uuid_; });
+  local_peer_pb_ = *self;
+  //config.mutable_peers()->erase(self);
+  config_.set_opid_index(0);
+  operation_factory_.reset(new MockOperationFactory);
+  init();
+}
+
+void RaftInstance::init() {
+  ASSERT_TRUE(ThreadPoolBuilder("log-pool").Build(&thread_pool_).ok());
+  metric_registry_.reset(new MetricRegistry());
+  fs_manager_.reset(new FsManager(test_->env_.get(), path_, server_type_));
+  ASSERT_TRUE(fs_manager_->CreateInitialFileSystemLayout().ok());
+  ASSERT_TRUE(fs_manager_->CheckAndOpenFileSystemRoots().ok());
+  fs_manager_->SetTabletPathByDataPath(tablet_uuid_, fs_manager_->GetDataRootDirs()[0]);
+  auto status =
+      ConsensusMetadata::Create(fs_manager_.get(), tablet_uuid_, peer_uuid_, config_, 0, &meta);
+  if (!status.ok()) FAIL();
+
+  table_metric_entity_ = METRIC_ENTITY_table.Instantiate(metric_registry_.get(), "test-table");
+  tablet_metric_entity_ =
+      METRIC_ENTITY_tablet.Instantiate(metric_registry_.get(), "test-tablet");
+
+  rpc::MessengerBuilder builder(peer_uuid_);
+  auto messenger = builder.Build();
+  ASSERT_TRUE(messenger.ok());
+  messenger_.reset(messenger->release());
+  proxy_cache_ = std::make_unique<rpc::ProxyCache>(messenger_.get());
+
+  init_log();
+
+  consensus_ = RaftConsensus::Create(
+      options_, std::move(meta), local_peer_pb_, table_metric_entity_, tablet_metric_entity_, clock_,
+      operation_factory_.get(), messenger_.get(), proxy_cache_.get(), log_, nullptr, nullptr,
+      Bind(
+          &::yb::consensus::RaftInstance::TabletPeerStateChangedCallback,
+          Unretained(this),
+          tablet_uuid_),
+      TableType::DEFAULT_TABLE_TYPE, thread_pool_.get(), 0, 0);
+}
+
+void RaftInstance::init_log() {
+  init_schema();
+  LogOptions options;
+  ASSERT_TRUE(Log::Open(
+                  options, tablet_uuid_, tablet_wal_path_, peer_uuid_, *schema_.get(), 0, nullptr,
+                  nullptr, thread_pool_.get(), thread_pool_.get(), thread_pool_.get(),
+                  std::numeric_limits<int64_t>::max(), &log_)
+                  .ok());
+}
+
+void RaftInstance::init_schema() {
+  schema_.reset(new Schema{
+      {ColumnSchema("key", INT32, false, true), ColumnSchema("int_val", INT32),
+       ColumnSchema("string_val", STRING, true)},
+      1});
+  auto schema_with_ids = SchemaBuilder(*schema_.get()).Build();
+  *schema_ = schema_with_ids;
+}
+
+void RaftInstance::start_rpc_server(const server::RpcServerOptions& opts) {
+  rpc_server_ = std::make_unique<server::RpcServer>(
+      peer_uuid_, opts, rpc::CreateConnectionContextFactory<rpc::YBInboundConnectionContext>());
+  server_metric_entity_ = METRIC_ENTITY_server.Instantiate(metric_registry_.get(), "server");
+  rpc::MessengerBuilder builder("server");
+  builder.set_metric_entity(server_metric_entity_);
+  auto messenger = builder.Build();
+  ASSERT_TRUE(messenger.ok());
+  server_messenger_.reset(messenger->release());
+  service_impl_.reset(new MyConsensusServiceImpl(consensus_.get(), server_metric_entity_));
+  ASSERT_TRUE(rpc_server_->Init(server_messenger_.get()).ok());
+  ASSERT_TRUE(rpc_server_->RegisterService(10000, std::move(service_impl_)).ok());
+  ASSERT_TRUE(rpc_server_->Start().ok());
+}
+TEST_F(RaftTest, a) {
+  std::unique_ptr<RaftConfigPB> config(new RaftConfigPB());
+  auto* peer = config->add_peers();
+  peer->set_permanent_uuid("uuid-1");
+  peer->set_member_type(PeerMemberType::VOTER);
+  auto addr = peer->mutable_last_known_private_addr()->Add();
+  addr->set_host("127.0.0.1");
+  addr->set_port(9001);
+  peer = config->add_peers();
+  peer->set_permanent_uuid("uuid-2");
+  peer->set_member_type(PeerMemberType::VOTER);
+  addr = peer->mutable_last_known_private_addr()->Add();
+  addr->set_host("127.0.0.2");
+  addr->set_port(9002);
+  peer = config->add_peers();
+  peer->set_permanent_uuid("uuid-3");
+  peer->set_member_type(PeerMemberType::VOTER);
+  addr = peer->mutable_last_known_private_addr()->Add();
+  addr->set_host("127.0.0.3");
+  addr->set_port(9003);
+  set_config(std::move(config));
+  create_instances();
+  start_instances();
+
+  std::this_thread::sleep_for(1h);
 }
 
 }  // namespace consensus
