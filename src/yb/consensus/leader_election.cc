@@ -191,7 +191,7 @@ LeaderElection::~LeaderElection() {
 }
 
 void LeaderElection::Run() {
-  VLOG_WITH_PREFIX(1) << "Running leader election.";
+  VLOG_WITH_PREFIX(1) << "--------------------Running leader election.";
 
   // Check if we have already won the election (relevant if this is a
   // single-node configuration, since we always pre-vote for ourselves).
@@ -213,7 +213,7 @@ void LeaderElection::Run() {
     }
 
     // Send the RPC request.
-    LOG_WITH_PREFIX(INFO) << "Requesting vote from peer " << voter_uuid;
+    VLOG_WITH_PREFIX(1) << "----------------Requesting vote from peer " << voter_uuid;
     state->rpc.set_timeout(timeout_);
 
     state->request = request_;
@@ -239,7 +239,7 @@ void LeaderElection::CheckForDecision() {
     // Check if the vote has been newly decided.
     auto decision = vote_counter_->GetDecision();
     if (!result_.decided() && decision != ElectionVote::kUnknown) {
-      LOG_WITH_PREFIX(INFO) << "Election decided. Result: candidate "
+      LOG_WITH_PREFIX(INFO) << "--------Election decided. Result: candidate "
                 << ((decision == ElectionVote::kGranted) ? "won." : "lost.");
       result_.decision = decision;
     }
@@ -366,7 +366,7 @@ void LeaderElection::HandleVoteGrantedUnlocked(const string& voter_uuid, const V
     result_.old_leader_ht_lease.TryUpdate(lease);
   }
 
-  LOG_WITH_PREFIX(INFO) << "Vote granted by peer " << voter_uuid;
+  LOG_WITH_PREFIX(INFO) << "----------------Vote granted by peer " << voter_uuid;
   RecordVoteUnlocked(voter_uuid, ElectionVote::kGranted);
 }
 
@@ -380,7 +380,7 @@ void LeaderElection::HandleVoteDeniedUnlocked(const string& voter_uuid, const Vo
     return HandleHigherTermUnlocked(voter_uuid, state);
   }
 
-  LOG_WITH_PREFIX(INFO) << "Vote denied by peer " << voter_uuid << ". Message: "
+  LOG_WITH_PREFIX(INFO) << "----------------Vote denied by peer " << voter_uuid << ". Message: "
             << StatusFromPB(state.response.consensus_error().status()).ToString();
   RecordVoteUnlocked(voter_uuid, ElectionVote::kDenied);
 }

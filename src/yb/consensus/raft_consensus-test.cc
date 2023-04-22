@@ -1092,6 +1092,9 @@ void RaftInstance::start_rpc_server(const server::RpcServerOptions& opts) {
   ASSERT_TRUE(rpc_server_->Start().ok());
 }
 TEST_F(RaftTest, a) {
+  fLS::FLAGS_log_dir = "/tmp";
+  fLB::FLAGS_logtostderr = false;
+  google::SetLogDestination(google::GLOG_INFO, "/tmp/INFO_");
   std::unique_ptr<RaftConfigPB> config(new RaftConfigPB());
   auto* peer = config->add_peers();
   peer->set_permanent_uuid("uuid-1");

@@ -505,7 +505,7 @@ size_t LogCache::EvictThroughOp(int64_t index, int64_t bytes_to_evict) {
 size_t LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evict,
     ReplicateMsgVector* evicted_messages) REQUIRES(lock_) {
   DCHECK(lock_.is_locked());
-  VLOG_WITH_PREFIX_UNLOCKED(2) << "Evicting log cache index <= "
+  VLOG_WITH_PREFIX_UNLOCKED(3) << "Evicting log cache index <= "
                       << stop_after_index
                       << " or " << HumanReadableNumBytes::ToString(bytes_to_evict)
                       << ": before state: " << ToStringUnlocked();
@@ -518,7 +518,7 @@ size_t LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_ev
   for (auto iter = cache_.begin(); iter != cache_.end();) {
     const CacheEntry& entry = iter->second;
     const ReplicateMsgPtr& msg = entry.msg;
-    VLOG_WITH_PREFIX_UNLOCKED(2) << "considering for eviction: " << OpId::FromPB(msg->id());
+    VLOG_WITH_PREFIX_UNLOCKED(3) << "considering for eviction: " << OpId::FromPB(msg->id());
     int64_t msg_index = msg->id().index();
     if (msg_index == 0) {
       // Always keep our special '0' op.
@@ -541,7 +541,7 @@ size_t LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_ev
       break;
     }
   }
-  VLOG_WITH_PREFIX_UNLOCKED(1) << "Evicting log cache: after state: " << ToStringUnlocked();
+  VLOG_WITH_PREFIX_UNLOCKED(3) << "Evicting log cache: after state: " << ToStringUnlocked();
 
   return bytes_evicted;
 }

@@ -466,7 +466,7 @@ MemTracker::MemTracker(int64_t byte_limit, const string& id,
       enable_logging_(FLAGS_mem_tracker_logging),
       log_stack_(FLAGS_mem_tracker_log_stack_trace),
       add_to_parent_(add_to_parent) {
-  VLOG(1) << "Creating tracker " << ToString();
+  VLOG(3) << "Creating tracker " << ToString();
   UpdateConsumption();
 
   all_trackers_.push_back(this);

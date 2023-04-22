@@ -847,14 +847,14 @@ Result<bool> ReplicaState::AdvanceCommittedOpIdUnlocked(
   // up in the RPC queue at the same time, and then might get interleaved out
   // of order.
   if (last_committed_op_id_.index >= committed_op_id.index) {
-    VLOG_WITH_PREFIX(1)
+    VLOG_WITH_PREFIX(3)
         << "Already marked ops through " << last_committed_op_id_ << " as committed. "
         << "Now trying to mark " << committed_op_id << " which would be a no-op.";
     return false;
   }
 
   if (pending_operations_.empty()) {
-    VLOG_WITH_PREFIX(1) << "No operations to mark as committed up to: "
+    VLOG_WITH_PREFIX(3) << "No operations to mark as committed up to: "
                         << committed_op_id;
     return STATUS_FORMAT(
         NotFound,

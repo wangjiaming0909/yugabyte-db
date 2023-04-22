@@ -383,6 +383,7 @@ void PeerMessageQueue::NumSSTFilesChanged() {
 
 void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id, const Status& status) {
   CHECK_OK(status);
+  VLOG_WITH_PREFIX(1) << "--------------queue: " << local_peer_uuid_ << " local append finished opid: " << id.ToString();
 
   // Fake an RPC response from the local peer.
   // TODO: we should probably refactor the ResponseFromPeer function so that we don't need to
@@ -436,6 +437,7 @@ Status PeerMessageQueue::TEST_AppendOperation(const ReplicateMsgPtr& msg) {
 Status PeerMessageQueue::AppendOperations(const ReplicateMsgs& msgs,
                                           const OpId& committed_op_id,
                                           RestartSafeCoarseTimePoint batch_mono_time) {
+  VLOG_WITH_PREFIX(1) << "--------------queue " << this->local_peer_uuid_ << " append operation ";
   DFAKE_SCOPED_LOCK(append_fake_lock_);
   OpId last_id;
   if (!msgs.empty()) {
@@ -698,16 +700,16 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     max_allowed_committed_op_id.ToPB(request->mutable_committed_op_id());
   }
 
-  if (PREDICT_FALSE(VLOG_IS_ON(2))) {
+  if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (!request->ops().empty()) {
-      VLOG_WITH_PREFIX(2) << "Sending request with operations to Peer: " << uuid
+      VLOG_WITH_PREFIX(2) << "-----------Sending request with operations to Peer: " << uuid
           << ". Size: " << request->ops().size()
           << ". From: " << request->ops().front().id().ShortDebugString() << ". To: "
           << request->ops().back().id().ShortDebugString();
-      VLOG_WITH_PREFIX(3) << "Operations: " << yb::ToString(request->ops());
+      VLOG_WITH_PREFIX(3) << "-----------Operations: " << yb::ToString(request->ops());
     } else {
       VLOG_WITH_PREFIX(2)
-          << "Sending " << (is_new ? "new " : "") << "status only request to Peer: " << uuid
+          << "-------------Sending " << (is_new ? "new " : "") << "status only request to Peer: " << uuid
           << ": " << request->ShortDebugString();
     }
   }
@@ -1017,7 +1019,7 @@ typename Policy::result_type PeerMessageQueue::GetWatermark() {
   // - For leader leases, we always assume that we've replicated an "infinite" lease to ourselves.
   const bool local_peer_infinite_watermark =
       HasMemberFunction_InfiniteWatermarkForLocalPeer<Policy>::value;
-
+ //OpId watermark policy has no InfiniteWatermarkForLocalPeer function
   if (num_peers_required == 1 && local_peer_infinite_watermark) {
     // We give "infinite lease" to ourselves.
     return GetInfiniteWatermarkForLocalPeer<
@@ -1075,7 +1077,7 @@ typename Policy::result_type PeerMessageQueue::GetWatermark() {
 
   auto nth = watermarks.begin() + index_of_interest;
   std::nth_element(watermarks.begin(), nth, watermarks.end(), typename Policy::Comparator());
-  VLOG_WITH_PREFIX_UNLOCKED(2)
+  VLOG_WITH_PREFIX_UNLOCKED(3)
       << Policy::Name() << " watermarks by peer: " << ::yb::ToString(watermarks)
       << ", num_peers_required=" << num_peers_required
       << ", local_peer_infinite_watermark=" << local_peer_infinite_watermark
@@ -1344,8 +1346,8 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       CHECK_LE(response.responder_term(), queue_state_.current_term);
     }
 
-    if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG_WITH_PREFIX_UNLOCKED(2) << "Received Response from Peer (" << peer->ToString() << "). "
+    if (PREDICT_FALSE(VLOG_IS_ON(1))) {
+      VLOG_WITH_PREFIX_UNLOCKED(1) << "-------------------Received Response from Peer (" << peer->ToString() << "). "
           << "Response: " << response.ShortDebugString();
     }
 

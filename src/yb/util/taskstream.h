@@ -185,7 +185,7 @@ Status TaskStream<T>::TEST_SubmitFunc(const std::function<void()>& func) {
 
 template <typename T>
 void TaskStream<T>::Run() {
-  VLOG(1) << "Starting taskstream task:" << this;
+  VLOG(3) << "Starting taskstream task:" << this;
   ChangeRunState(RunState::kSubmit, RunState::kDrain);
   run_tid_ = Thread::CurrentThreadIdForStack();
   for (;;) {
@@ -220,7 +220,7 @@ void TaskStream<T>::Run() {
       stop_cond_.notify_all();
       return;
     }
-    VLOG(1) << "Returning from TaskStream task after inactivity:" << this;
+    VLOG(3) << "Returning from TaskStream task after inactivity:" << this;
     return;
   }
 }

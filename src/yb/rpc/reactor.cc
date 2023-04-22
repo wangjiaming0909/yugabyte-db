@@ -147,7 +147,7 @@ Reactor::Reactor(Messenger* messenger,
   static std::once_flag libev_once;
   std::call_once(libev_once, DoInitLibEv);
 
-  VLOG_WITH_PREFIX(1) << "Create reactor with keep alive_time: "
+  VLOG_WITH_PREFIX(3) << "Create reactor with keep alive_time: "
                       << yb::ToString(connection_keepalive_time_)
                       << ", coarse timer granularity: " << yb::ToString(coarse_timer_granularity_);
 
