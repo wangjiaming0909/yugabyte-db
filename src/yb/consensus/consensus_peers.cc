@@ -215,6 +215,7 @@ void Peer::SendNextRequest(RequestTriggerMode trigger_mode) {
   arena_.Reset(ResetMode::kKeepFirst);
   update_request_ = arena_.NewObject<LWConsensusRequestPB>(&arena_);
   update_response_ = arena_.NewObject<LWConsensusResponsePB>(&arena_);
+  VLOG_WITH_PREFIX(1) << "-----------send append entry to peer: " << peer_pb_.permanent_uuid();
 
   // The peer has no pending request nor is sending: send the request.
   bool needs_remote_bootstrap = false;
@@ -354,6 +355,9 @@ void Peer::SendNextRequest(RequestTriggerMode trigger_mode) {
   processing_lock.unlock();
   performing_update_lock.release();
   controller_.set_invoke_callback_mode(rpc::InvokeCallbackMode::kThreadPoolHigh);
+  VLOG_WITH_PREFIX(1) << "-----------Try to send append entry to peer: "
+                      << update_request_->dest_uuid()
+                      << " req: " << update_request_->ShortDebugString();
   proxy_->UpdateAsync(update_request_, trigger_mode, update_response_, &controller_,
                       std::bind(&Peer::ProcessResponse, retain_self));
 }
@@ -452,6 +456,8 @@ void Peer::ProcessResponse() {
   bool more_pending = ProcessResponseWithStatus(status, update_response_);
 
   if (more_pending) {
+    VLOG_WITH_PREFIX(1) << "------------ more msg pending when process response msg from "
+                        << update_response_->responder_uuid();
     processing_lock.unlock();
     performing_update_lock.release();
     SendNextRequest(RequestTriggerMode::kAlwaysSend);
@@ -481,6 +487,8 @@ void Peer::ProcessHeartbeatResponse(const Status& status) {
   bool more_pending = ProcessResponseWithStatus(status, lw_response.get());
 
   if (more_pending) {
+    VLOG_WITH_PREFIX(1) << "------------ more msg pending when process heartbeat response msg from "
+                        << lw_response->responder_uuid();
     auto performing_update_lock = LockPerformingUpdate(std::try_to_lock);
     if (!performing_update_lock.owns_lock()) {
       return;

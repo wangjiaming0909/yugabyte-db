@@ -702,13 +702,13 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
 
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (!request->ops().empty()) {
-      VLOG_WITH_PREFIX(2) << "-----------Sending request with operations to Peer: " << uuid
+      VLOG_WITH_PREFIX(1) << "-----------Sending request with operations to Peer: " << uuid
           << ". Size: " << request->ops().size()
           << ". From: " << request->ops().front().id().ShortDebugString() << ". To: "
           << request->ops().back().id().ShortDebugString();
-      VLOG_WITH_PREFIX(3) << "-----------Operations: " << yb::ToString(request->ops());
+      VLOG_WITH_PREFIX(1) << "-----------Operations: " << yb::ToString(request->ops());
     } else {
-      VLOG_WITH_PREFIX(2)
+      VLOG_WITH_PREFIX(1)
           << "-------------Sending " << (is_new ? "new " : "") << "status only request to Peer: " << uuid
           << ": " << request->ShortDebugString();
     }
@@ -1309,9 +1309,9 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
             DCHECK(status.has_last_received());
             if (previous.is_new) {
               // That's currently how we can detect that we able to connect to a peer.
-              LOG_WITH_PREFIX_UNLOCKED(INFO) << "Connected to new peer: " << peer->ToString();
+              LOG_WITH_PREFIX_UNLOCKED(INFO) << "-----------Connected to new peer: " << peer->ToString();
             } else {
-              LOG_WITH_PREFIX_UNLOCKED(INFO) << "Got LMP mismatch error from peer: "
+              LOG_WITH_PREFIX_UNLOCKED(INFO) << "-----------Got LMP mismatch error from peer: "
                                              << peer->ToString();
               CHECK(!FLAGS_TEST_disallow_lmp_failures);
             }

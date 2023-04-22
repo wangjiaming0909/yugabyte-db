@@ -962,7 +962,7 @@ struct RaftInstance {
   void TabletPeerStateChangedCallback(
       const string& tablet_id,
       std::shared_ptr<consensus::StateChangeContext> context) {
-    LOG(INFO) << "Tablet peer state changed for tablet " << tablet_id
+    LOG(INFO) << "----------------consensus: " << peer_uuid_ << " tablet peer state changed for tablet " << tablet_id
               << ". Reason: " << context->ToString();
   }
   void start(const ConsensusBootstrapInfo& info) {

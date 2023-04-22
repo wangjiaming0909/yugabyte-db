@@ -456,6 +456,7 @@ RaftConsensus::~RaftConsensus() {
 Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
 
+  VLOG_WITH_PREFIX(1) << "-----------consensus: " << state_->GetPeerUuid() << " started";
   // Capture a weak_ptr reference into the functor so it can safely handle
   // outliving the consensus instance.
   std::weak_ptr<RaftConsensus> w = shared_from_this();
@@ -1054,7 +1055,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   TRACE_EVENT2("consensus", "RaftConsensus::BecomeLeaderUnlocked",
                "peer", peer_uuid(),
                "tablet", tablet_id());
-  LOG_WITH_PREFIX(INFO) << "Becoming Leader. State: " << state_->ToStringUnlocked();
+  LOG_WITH_PREFIX(INFO) << "----------------Becoming Leader. State: " << state_->ToStringUnlocked();
 
   // Disable FD while we are leader.
   DisableFailureDetector();
@@ -1072,7 +1073,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   auto replicate = rpc::MakeSharedMessage<LWReplicateMsg>();
   replicate->set_op_type(NO_OP);
   replicate->mutable_noop_request(); // Define the no-op request field.
-  LOG(INFO) << "Sending NO_OP at op " << state_->GetCommittedOpIdUnlocked();
+  LOG(INFO) << "--------------Sending NO_OP at op " << state_->GetCommittedOpIdUnlocked();
   // This committed OpId is used for tablet bootstrap for RocksDB-backed tables.
   state_->GetCommittedOpIdUnlocked().ToPB(replicate->mutable_committed_op_id());
 
@@ -1372,7 +1373,7 @@ void RaftConsensus::UpdateMajorityReplicated(
     LOG(WARNING) << "Leader lease expiration was not set: " << s;
   }
 
-  VLOG_WITH_PREFIX(3) << "Marking majority replicated up to "
+  VLOG_WITH_PREFIX(1) << "-------------Marking majority replicated up to "
       << majority_replicated_data.ToString();
   TRACE("Marking majority replicated up to $0", majority_replicated_data.op_id.ToString());
   bool committed_index_changed = false;
@@ -1827,9 +1828,9 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(
 Result<RaftConsensus::UpdateReplicaResult> RaftConsensus::UpdateReplica(
     const std::shared_ptr<LWConsensusRequestPB>& request_ptr,
     LWConsensusResponsePB* response) {
-  TRACE_EVENT2("-----------consensus", "RaftConsensus::UpdateReplica",
-               "peer", peer_uuid(),
-               "tablet", tablet_id());
+  VLOG_WITH_PREFIX(1) << "-----------consensus "
+                      << "RaftConsensus::UpdateReplica "
+                      << " peer " << peer_uuid() << " tablet " << tablet_id();
 
   const auto& request = *request_ptr;
   if (request.has_propagated_hybrid_time()) {
@@ -2244,6 +2245,8 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
   TRACE_EVENT2("consensus", "RaftConsensus::RequestVote",
                "peer", peer_uuid(),
                "tablet", tablet_id());
+  VLOG_WITH_PREFIX(1) << "-----------received request vote from " << request->candidate_uuid()
+                      << " preelection: " << request->preelection();
   bool preelection = request->preelection();
 
   response->set_responder_uuid(state_->GetPeerUuid());
@@ -2803,8 +2806,7 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateMsgPtr& msg
                          OperationType_Name(op_type),
                          *msg);
   }
-  VLOG_WITH_PREFIX(1) << "Starting consensus round: "
-                      << msg->id().ShortDebugString();
+  VLOG_WITH_PREFIX(1) << "Starting consensus round: " << msg->ShortDebugString();
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   std::shared_ptr<StateChangeContext> context = nullptr;
 
@@ -3305,7 +3307,7 @@ void RaftConsensus::DoElectionCallback(const LeaderElectionData& data,
     return;
   }
 
-  LOG_WITH_PREFIX(INFO) << "Leader " << election_name << " won for term " << result.election_term;
+  LOG_WITH_PREFIX(INFO) << "-------------Leader " << election_name << " won for term " << result.election_term;
 
   // Apply lease updates that were possible received from voters.
   state_->UpdateOldLeaderLeaseExpirationOnNonLeaderUnlocked(
