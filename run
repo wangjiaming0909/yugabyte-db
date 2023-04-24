@@ -1,2 +1,3 @@
+bash ./bd
 rm -rf /tmp/uuid-*
 ./build/latest/tests-consensus/raft_consensus-test --v=1 --gtest_filter=RaftTest.a

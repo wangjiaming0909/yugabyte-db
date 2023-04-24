@@ -602,7 +602,7 @@ ReplicaState::PendingOperations::iterator ReplicaState::FindPendingOperation(int
 Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
   DCHECK(IsLocked());
   LOG_WITH_PREFIX(INFO)
-      << "Aborting all operations after (but not including): "
+      << "-------------Aborting all operations after (but not including): "
       << new_preceding_idx << ". Current State: " << ToStringUnlocked();
 
   DCHECK_GE(new_preceding_idx, 0);

@@ -511,6 +511,8 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     if (PREDICT_FALSE(peer == nullptr || queue_state_.mode == Mode::NON_LEADER)) {
       return STATUS(NotFound, "Peer not tracked or queue not in leader mode.");
     }
+    LOG(INFO) << "---------queue: " << this->local_peer_uuid_
+              << " make request for peer: " << peer->ToString();
 
     HybridTime now_ht;
 
@@ -1211,6 +1213,8 @@ void PeerMessageQueue::RequestWasNotSent(const std::string& peer_uuid) {
 
 bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
                                         const LWConsensusResponsePB& response) {
+  VLOG_WITH_PREFIX(1) << " -------received response from: " << peer_uuid
+                      << " response: " << response.ShortDebugString();
   MajorityReplicatedData majority_replicated;
   Mode mode_copy;
   bool result = false;

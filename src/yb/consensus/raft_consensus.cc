@@ -307,6 +307,7 @@ std::unique_ptr<ConsensusRoundCallback> MakeNonTrackedRoundCallback(
 
 struct RaftConsensus::LeaderRequest {
   std::string leader_uuid;
+  // already committed or replicated id
   OpId preceding_op_id;
   OpId committed_op_id;
   ReplicateMsgs messages;
@@ -1534,7 +1535,10 @@ Status RaftConsensus::Update(
   RETURN_NOT_OK(ExecuteHook(PRE_UPDATE));
   response->ref_responder_uuid(state_->GetPeerUuid());
 
-  VLOG_WITH_PREFIX(2) << "Replica received request: " << request.ShortDebugString();
+  VLOG_WITH_PREFIX(1) << "-------------Replica received request: " << request.ShortDebugString();
+  auto _ = ScopeExit(
+      [&]() { VLOG_WITH_PREFIX(1) << "-------------after handling update request, my state: " << state_->ToString(); });
+  VLOG_WITH_PREFIX(1) << "-------------received update request, my state: " << state_->ToString();
 
   UpdateReplicaResult result;
   {
@@ -1638,7 +1642,7 @@ Status RaftConsensus::DeduplicateLeaderRequestUnlocked(
     auto id = OpId::FromPB(leader_msg.id());
 
     if (id.index <= last_committed.index) {
-      VLOG_WITH_PREFIX(2) << "Skipping op id " << id << " (already committed)";
+      VLOG_WITH_PREFIX(1) << "Skipping op id " << id << " (already committed)";
       deduplicated_req->preceding_op_id = id;
       continue;
     }
@@ -1655,7 +1659,7 @@ Status RaftConsensus::DeduplicateLeaderRequestUnlocked(
       // If the OpIds match, i.e. if they have the same term and id, then this is just
       // duplicate, we skip...
       if (OpId::FromPB(round->replicate_msg()->id()) == id) {
-        VLOG_WITH_PREFIX(2) << "Skipping op id " << id << " (already replicated)";
+        VLOG_WITH_PREFIX(1) << "Skipping op id " << id << " (already replicated)";
         deduplicated_req->preceding_op_id = id;
         continue;
       }
@@ -1693,14 +1697,14 @@ Status RaftConsensus::HandleLeaderRequestTermUnlocked(const LWConsensusRequestPB
   if (request.caller_term() < state_->GetCurrentTermUnlocked()) {
     auto status = STATUS_FORMAT(
         IllegalState,
-        "Rejecting Update request from peer $0 for earlier term $1. Current term is $2. Ops: $3",
+        "--------------Rejecting Update request from peer $0 for earlier term $1. Current term is $2. Ops: $3",
         request.caller_uuid(), request.caller_term(), state_->GetCurrentTermUnlocked(),
         OpsRangeString(request));
     LOG_WITH_PREFIX(INFO) << status.message();
     FillConsensusResponseError(response, ConsensusErrorPB::INVALID_TERM, status);
     return Status::OK();
   }
-
+  CHECK(request.caller_term() > state_->GetCurrentTermUnlocked());
   return HandleTermAdvanceUnlocked(request.caller_term());
 }
 
@@ -1721,7 +1725,7 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
                              ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,
                              STATUS(IllegalState, error_msg));
 
-  LOG_WITH_PREFIX(INFO) << "Refusing update from remote peer "
+  LOG_WITH_PREFIX(INFO) << "------------Refusing update from remote peer "
                         << req.leader_uuid << ": " << error_msg;
 
   // If the terms mismatch we abort down to the index before the leader's preceding,
@@ -1747,6 +1751,7 @@ Status RaftConsensus::CheckLeaderRequestOpIdSequence(
   auto prev = deduped_req.preceding_op_id;
   for (const auto& message : deduped_req.messages) {
     auto current = OpId::FromPB(message->id());
+    // here assume that current.term >= prev.term and current.index = prev.index + 1
     sequence_check_status = ReplicaState::CheckOpInSequence(prev, current);
     if (PREDICT_FALSE(!sequence_check_status.ok())) {
       LOG(ERROR) << "Leader request contained out-of-sequence messages. Status: "
@@ -3346,7 +3351,7 @@ yb::OpId RaftConsensus::GetAllAppliedOpId() {
 }
 
 void RaftConsensus::MarkDirty(std::shared_ptr<StateChangeContext> context) {
-  LOG_WITH_PREFIX(INFO) << "Calling mark dirty synchronously for reason code " << context->reason;
+  VLOG_WITH_PREFIX(2) << "Calling mark dirty synchronously for reason code " << context->reason;
   mark_dirty_clbk_.Run(context);
 }
 
@@ -3454,14 +3459,14 @@ Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term) {
   }
 
   if (state_->GetActiveRoleUnlocked() == PeerRole::LEADER) {
-    LOG_WITH_PREFIX(INFO) << "Stepping down as leader of term "
+    LOG_WITH_PREFIX(INFO) << "----------Stepping down as leader of term "
                           << state_->GetCurrentTermUnlocked()
                           << " since new term is " << new_term;
 
     RETURN_NOT_OK(BecomeReplicaUnlocked(std::string()));
   }
 
-  LOG_WITH_PREFIX(INFO) << "Advancing to term " << new_term;
+  LOG_WITH_PREFIX(INFO) << "-----------Advancing to term " << new_term;
   RETURN_NOT_OK(state_->SetCurrentTermUnlocked(new_term));
   term_metric_->set_value(new_term);
   return Status::OK();

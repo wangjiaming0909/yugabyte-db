@@ -215,7 +215,12 @@ void Peer::SendNextRequest(RequestTriggerMode trigger_mode) {
   arena_.Reset(ResetMode::kKeepFirst);
   update_request_ = arena_.NewObject<LWConsensusRequestPB>(&arena_);
   update_response_ = arena_.NewObject<LWConsensusResponsePB>(&arena_);
-  VLOG_WITH_PREFIX(1) << "-----------send append entry to peer: " << peer_pb_.permanent_uuid();
+  VLOG_WITH_PREFIX(1) << "-----------send append entry to peer: " << peer_pb_.permanent_uuid()
+                      << " cur peer queue state: " << queue_->ToString();
+  auto _ = ScopeExit([&]() {
+    VLOG_WITH_PREFIX(1) << "-------after send append entry to peer: " << peer_pb_.permanent_uuid()
+                        << " cur queue state: " << queue_->ToString();
+  });
 
   // The peer has no pending request nor is sending: send the request.
   bool needs_remote_bootstrap = false;
@@ -374,6 +379,12 @@ std::unique_lock<simple_spinlock> Peer::StartProcessingUnlocked() {
 
 bool Peer::ProcessResponseWithStatus(const Status& status,
                                      LWConsensusResponsePB* response) {
+  VLOG_WITH_PREFIX(1) << "-------peer: " << peer_pb_.permanent_uuid()
+                      << " starting to handle response: " << response->ShortDebugString() << " cur queue state: " << queue_->ToString();
+  auto _ = ScopeExit([&]() {
+    VLOG_WITH_PREFIX(1) << "---------peer: " << peer_pb().permanent_uuid()
+                        << " finished handing response, cur queue state: " << queue_->ToString();
+  });
   if (!status.ok()) {
     if (status.IsRemoteError()) {
       // Most controller errors are caused by network issues or corner cases like shutdown and
